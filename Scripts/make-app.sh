@@ -345,10 +345,15 @@ if [ "$install" = 1 ]; then
     fi
     # Quit a running Sill.app first. SIGTERM goes through HostShutdown, which puts a staged window
     # back. The pattern matches Mac bundles only: the iOS Simulator's Sill.app is flat, and
-    # `pkill -x Sill` would kill it too.
-    if pgrep -f 'Sill\.app/Contents/MacOS/Sill' >/dev/null; then
-        pkill -TERM -f 'Sill\.app/Contents/MacOS/Sill' || true
-        for _ in $(seq 1 50); do pgrep -f 'Sill\.app/Contents/MacOS/Sill' >/dev/null || break; sleep 0.1; done
+    # `pkill -x Sill` would kill it too. macOS excludes ancestors unless -a is passed: when
+    # Update & Restart runs this script, the host that must exit is one of our ancestors.
+    if pgrep -af 'Sill\.app/Contents/MacOS/Sill' >/dev/null; then
+        pkill -a -TERM -f 'Sill\.app/Contents/MacOS/Sill' || true
+        for _ in $(seq 1 50); do pgrep -af 'Sill\.app/Contents/MacOS/Sill' >/dev/null || break; sleep 0.1; done
+        if pgrep -af 'Sill\.app/Contents/MacOS/Sill' >/dev/null; then
+            echo "error: Sill did not quit; leaving the installed app in place." >&2
+            exit 1
+        fi
     fi
     rm -rf "$dest"
     ditto "$app" "$dest"
