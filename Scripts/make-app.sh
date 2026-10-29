@@ -91,6 +91,25 @@ minos="$(xcrun vtool -show-build "$bin/SillMenuBar" | awk '$1 == "minos" && !fou
 xcrun vtool -set-build-version macos "${minos:?vtool reported no deployment target for $bin/SillMenuBar}" \
     "$(xcrun --sdk macosx --show-sdk-version)" -output "$stage/Contents/MacOS/Sill" "$bin/SillMenuBar"
 cp Packaging/Info.plist "$stage/Contents/Info.plist"
+# Personal forks can opt into the source updater without changing the official release checker.
+# Keep the source and original commit in the signed bundle so a check compares commits, not the
+# release version (main can change for weeks while CFBundleShortVersionString stays the same).
+if [ -f Packaging/SourceUpdates.plist ]; then
+    fork="$(/usr/libexec/PlistBuddy -c 'Print :Fork' Packaging/SourceUpdates.plist)"
+    upstream="$(/usr/libexec/PlistBuddy -c 'Print :Upstream' Packaging/SourceUpdates.plist)"
+    upstream_revision="$(git merge-base HEAD refs/remotes/upstream/main)"
+    for key in SillSourceCheckout SillForkRepository SillUpstreamRepository SillSourceRevision SillUpstreamRevision; do
+        case "$key" in
+            SillSourceCheckout) value="$PWD" ;;
+            SillForkRepository) value="$fork" ;;
+            SillUpstreamRepository) value="$upstream" ;;
+            SillSourceRevision) value="$(git rev-parse HEAD)" ;;
+            SillUpstreamRevision) value="$upstream_revision" ;;
+        esac
+        /usr/libexec/PlistBuddy -c "Add :$key string $value" "$stage/Contents/Info.plist"
+    done
+    cp Scripts/update-from-upstream.sh "$stage/Contents/Resources/"
+fi
 build_number="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $build_number" "$stage/Contents/Info.plist"
 printf 'APPL????' > "$stage/Contents/PkgInfo"

@@ -30,6 +30,7 @@ struct MenuEntry: Equatable {
         case showPairingRequest(name: String, showing: Bool)
         /// Sill 0.4 Is Available…: the release's page on GitHub, in the browser (UpdateChecker).
         case openUpdate(URL)
+        case showSourceUpdates
     }
 
     var kind: Kind
@@ -162,8 +163,14 @@ enum MenuBuilder {
         let permissions = PermissionState(screenRecording: model.permissions.screenRecording,
                                           accessibility: model.permissions.accessibility)
         let update = model.updates.offer.flatMap { offer in model.updates.runningVersion.map { (offer: offer, running: $0) } }
-        return entries(presentation: model.presentation, config: model.settings.config, login: login, permissions: permissions,
-                       update: update)
+        var menu = entries(presentation: model.presentation, config: model.settings.config, login: login, permissions: permissions,
+                           update: model.sourceUpdates.available ? nil : update)
+        if model.sourceUpdates.available {
+            menu.insert(MenuEntry(kind: .item,
+                                  title: model.sourceUpdates.updateAvailable ? "Update Sill…" : "Check for Updates…",
+                                  action: .showSourceUpdates), at: 1)
+        }
+        return menu
     }
 
     /// The menu as text, for the previews: "✓" checked, "⚠" attention, "(off)" disabled.
@@ -309,6 +316,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         case .showPairing: model.pairDevice()
         case .showPairingRequest(let name, let showing): model.showPairingRequest(name: name, showing: showing)
         case .openUpdate(let url): NSWorkspace.shared.open(url)   // the browser; no modal loop
+        case .showSourceUpdates:
+            model.showSettings?(.general)
+            model.sourceUpdates.checkNow()
         case .quit: NSApp.terminate(nil)
         }
     }

@@ -149,6 +149,8 @@ private struct GeneralPane: View {
                              allow: { model.permissions.allowClipboard() })
             if let preview = previewUpdates {
                 UpdatesSection(pane: preview, automatic: .constant(true))
+            } else if model.sourceUpdates.available {
+                SourceUpdatesSection(updater: model.sourceUpdates, automatic: $settings.updateCheck)
             } else {
                 UpdatesSection(pane: model.updates.pane, automatic: $settings.updateCheck,
                                actions: UpdatesSection.Actions(checkNow: { model.updates.checkNow() },
@@ -217,6 +219,36 @@ struct ClipboardSection: View {
 }
 
 // MARK: Updates
+
+struct SourceUpdatesSection: View {
+    let updater: SourceUpdater
+    @Binding var automatic: Bool
+
+    var body: some View {
+        Section {
+            Toggle("Check for updates automatically", isOn: $automatic)
+            Text(updater.line)
+                .foregroundStyle(updater.failed ? Color.orange : Color.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Button("Check Now") { updater.checkNow() }
+                    .disabled(updater.busy)
+                Button("Update & Restart") { updater.updateAndRestart() }
+                    .disabled(updater.busy)
+                if FileManager.default.fileExists(atPath: updater.logURL.path) {
+                    Button("Open Update Log") { NSWorkspace.shared.open(updater.logURL) }
+                }
+            }
+            .onChange(of: updater.resultID) { _, _ in
+                AccessibilityNotification.Announcement(updater.line).post()
+            }
+        } header: {
+            Text("Updates from the Original Sill")
+        } footer: {
+            Footnote("Checks the original Sill once a day. Update & Restart syncs your fork, builds the latest app, and restarts Sill. Your fork’s changes and settings are kept. Conflicts or build errors stop the update.")
+        }
+    }
+}
 
 /// Settings › General's update check: the automatic switch, the line (what the last check found, or
 /// why Sill cannot check), Open Release Page… while a newer release is offered, and Check Now. Plain

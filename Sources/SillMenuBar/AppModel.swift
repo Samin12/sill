@@ -15,6 +15,7 @@ final class AppModel {
     /// The update check (GitHub's releases feed): the menu's "Sill 0.4 Is Available…" and Settings ›
     /// General's section. Started once the host has started, or could not.
     let updates: UpdateChecker
+    let sourceUpdates: SourceUpdater
     /// `--synthetic`: the Desktop streams a test pattern and the host stays off Bonjour, exactly
     /// as with the CLI's flag. No onboarding in this mode.
     let synthetic = CommandLine.arguments.contains("--synthetic")
@@ -69,13 +70,19 @@ final class AppModel {
         let settings = HostSettings()
         self.settings = settings
         permissions = PermissionsModel(settings: settings)
+        let sourceUpdates = SourceUpdater()
+        self.sourceUpdates = sourceUpdates
         let updates = UpdateChecker(configuration: DebugHooks.updateConfiguration(testPattern: CommandLine.arguments.contains("--synthetic")),
-                                    automatic: settings.updateCheck)
+                                    automatic: settings.updateCheck && !sourceUpdates.available)
         self.updates = updates
         // The switch reaches the checker from launch on: Settings… is in the menu before the host
         // is up (up to a second or more), and -SillSetAfter counts from launch. Before `start()`
         // the checker only records it.
-        settings.onUpdateCheckChange = { [settings, updates] in updates.setAutomatic(settings.updateCheck) }
+        settings.onUpdateCheckChange = { [settings, updates, sourceUpdates] in
+            updates.setAutomatic(settings.updateCheck && !sourceUpdates.available)
+            sourceUpdates.setAutomatic(settings.updateCheck)
+            if settings.updateCheck { sourceUpdates.checkIfDue() }
+        }
         presentation = StatusText.present(snapshot: HostStatusSnapshot(),
                                           permissions: PermissionState(screenRecording: true, accessibility: true),
                                           startupError: nil, hasCoordinator: false)
@@ -143,9 +150,14 @@ final class AppModel {
     /// The update check's schedule and the Mac waking (its switch is wired from `init`).
     private func startUpdates() {
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.updates.systemDidWake() }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.updates.systemDidWake()
+                if self.settings.updateCheck { self.sourceUpdates.checkIfDue() }
+            }
         }
         updates.start()
+        sourceUpdates.start(automatic: settings.updateCheck)
     }
 
     // MARK: Pairing and remote access
